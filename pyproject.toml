@@ -62,6 +62,7 @@ ignore = ["N802", "N803", "N806", "RUF002", "RUF003"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+warn_return_any = false  # NumPy stubs differ across versions; keep results stable
 files = ["src", "examples"]
 mypy_path = "examples"
 
