@@ -47,7 +47,7 @@ LinearRegression("gradient_descent", learning_rate=0.1, n_iter=500).fit(X, y)
 X, y = make_moons(500, noise=0.2, random_state=0)
 X_tr, X_te, y_tr, y_te = train_test_split(X, y, random_state=0)
 mlp = MLP((16, 16), learning_rate=0.02, n_epochs=300, batch_size=64).fit(X_tr, y_tr)
-print(mlp.score(X_te, y_te))  # ~ 0.97
+print(mlp.score(X_te, y_te))  # ~ 0.94
 
 # clustering and dimensionality reduction
 labels = KMeans(3, random_state=0).fit_predict(make_blobs(300, 3, random_state=1)[0])
