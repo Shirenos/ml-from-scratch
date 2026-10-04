@@ -156,6 +156,10 @@ class MLP:
                 acts.append(z)
         return zs, acts
 
+    def _logits(self, X: FloatArray) -> FloatArray:
+        """Pre-link output ``z^(L)`` of the last layer, shape ``(n, n_outputs)``."""
+        return self._forward(X)[0][-1]
+
     def _loss_from_logits(self, z: FloatArray, Y: FloatArray) -> float:
         if self.task == "binary":
             data = np.mean(softplus(z) - Y * z)
@@ -212,7 +216,7 @@ class MLP:
                 _, gW, gb = self._loss_and_grads(Xa[idx], Y[idx])
                 step += 1
                 self._apply_update(params, [*gW, *gb], m, v, step)
-            self.loss_history_.append(self._loss_from_logits(self._forward(Xa)[0][-1], Y))
+            self.loss_history_.append(self._loss_from_logits(self._logits(Xa), Y))
         return self
 
     def _apply_update(
