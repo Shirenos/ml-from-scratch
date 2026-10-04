@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ml-from-scratch"
+version = "0.1.0"
+description = "Classic machine-learning algorithms implemented from scratch in plain NumPy."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Shirenos" }]
+keywords = ["machine-learning", "numpy", "from-scratch", "mathematics"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Education",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+plots = ["matplotlib>=3.8"]
+dev = [
+    "matplotlib>=3.8",
+    "pytest>=8",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "scikit-learn>=1.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/Shirenos/ml-from-scratch"
+Issues = "https://github.com/Shirenos/ml-from-scratch/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ml_from_scratch = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "examples"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "NPY", "RUF", "C4", "PT"]
+# Capitalised X / Z / W are the standard ML notation for matrices.
+ignore = ["N802", "N803", "N806", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PT011"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "examples"]
+mypy_path = "examples"
+
+[[tool.mypy.overrides]]
+module = ["matplotlib.*", "cycler.*"]
+ignore_missing_imports = true
