@@ -38,7 +38,7 @@ def test_backprop_matches_numerical_gradient(task: Task, activation: str) -> Non
     model = MLP((5, 4), task=task, activation=activation, l2=0.01, n_epochs=1, random_state=0)  # type: ignore[arg-type]
     model.fit(X, y)  # builds the parameters (one epoch)
     Y = model._encode_targets(np.asarray(y))
-    _, gW, gb = model._loss_and_grads(X, Y)
+    gW, gb = model._grads(X, Y)
     for W, g in zip(model.weights_, gW, strict=True):
         assert np.allclose(g, _numeric_grad(model, X, Y, W), atol=1e-6)
     for b, g in zip(model.biases_, gb, strict=True):
@@ -187,9 +187,9 @@ def test_regression_score_is_r2() -> None:
         ({"optimizer": "rmsprop"}, "unknown optimizer 'rmsprop'"),
         ({"hidden_layers": (0,)}, "hidden layer sizes must be positive"),
         ({"hidden_layers": (4, -1)}, "hidden layer sizes must be positive"),
-        ({"learning_rate": 0.0}, "learning_rate > 0"),
-        ({"n_epochs": 0}, "n_epochs >= 1"),
-        ({"l2": -0.1}, "l2 >= 0"),
+        ({"learning_rate": 0.0}, "learning_rate must be positive; got 0.0"),
+        ({"n_epochs": 0}, "n_epochs must be at least 1; got 0"),
+        ({"l2": -0.1}, "l2 must be non-negative; got -0.1"),
         ({"batch_size": 0}, "batch_size must be positive"),
     ],
 )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from itertools import pairwise
-from typing import Literal
+from typing import Literal, Self
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -34,7 +34,7 @@ def _act_grad(name: Activation, z: FloatArray, a: FloatArray) -> FloatArray:
     """Derivative of the activation, given pre-activation ``z`` and activation ``a``."""
     if name == "tanh":
         return 1.0 - a * a
-    return (z > 0.0).astype(np.float64)
+    return (z > 0.0).astype(np.float64)  # ReLU'(0) = 0 by convention
 
 
 class MLP:
@@ -76,7 +76,9 @@ class MLP:
         learning_rate: Step size.
         n_epochs: Passes over the training data.
         batch_size: Mini-batch size; ``None`` means full batch.
-        l2: Weight decay ``lambda >= 0`` on the weights (not on biases).
+        l2: Penalty strength ``lambda >= 0`` on the weights (not on biases). This is classic
+            L2 regularisation: ``lambda * W`` is added to the gradient, so with Adam it is
+            rescaled by the adaptive step. It is not decoupled weight decay (AdamW).
         random_state: Seed (or generator) for initialisation and shuffling.
 
     Attributes:
@@ -107,8 +109,12 @@ class MLP:
             raise ValueError(f"unknown optimizer {optimizer!r}")
         if any(h < 1 for h in hidden_layers):
             raise ValueError("hidden layer sizes must be positive")
-        if learning_rate <= 0 or n_epochs < 1 or l2 < 0:
-            raise ValueError("learning_rate > 0, n_epochs >= 1 and l2 >= 0 are required")
+        if learning_rate <= 0:
+            raise ValueError(f"learning_rate must be positive; got {learning_rate}")
+        if n_epochs < 1:
+            raise ValueError(f"n_epochs must be at least 1; got {n_epochs}")
+        if l2 < 0:
+            raise ValueError(f"l2 must be non-negative; got {l2}")
         if batch_size is not None and batch_size < 1:
             raise ValueError("batch_size must be positive")
         self.hidden_layers = tuple(hidden_layers)
@@ -170,13 +176,10 @@ class MLP:
         penalty = 0.5 * self.l2 * sum(float((W * W).sum()) for W in self.weights_)
         return float(data) + penalty
 
-    def _loss_and_grads(
-        self, X: FloatArray, Y: FloatArray
-    ) -> tuple[float, list[FloatArray], list[FloatArray]]:
-        """Objective value and its gradients w.r.t. every weight matrix and bias vector."""
+    def _grads(self, X: FloatArray, Y: FloatArray) -> tuple[list[FloatArray], list[FloatArray]]:
+        """Gradients of the objective w.r.t. every weight matrix and bias vector."""
         n = X.shape[0]
         zs, acts = self._forward(X)
-        loss = self._loss_from_logits(zs[-1], Y)
         delta = (acts[-1] - Y) / n  # output error for all (link, loss) pairs above
         grads_W: list[FloatArray] = [np.empty(0)] * len(self.weights_)
         grads_b: list[FloatArray] = [np.empty(0)] * len(self.weights_)
@@ -186,10 +189,10 @@ class MLP:
             if layer > 0:
                 back = delta @ self.weights_[layer].T
                 delta = back * _act_grad(self.activation, zs[layer - 1], acts[layer])
-        return loss, grads_W, grads_b
+        return grads_W, grads_b
 
     # ---------------------------------------------------------------- training
-    def fit(self, X: ArrayLike, y: ArrayLike) -> MLP:
+    def fit(self, X: ArrayLike, y: ArrayLike) -> Self:
         """Train on ``X`` of shape ``(n, d)`` and targets ``y``.
 
         ``y`` holds class labels (classification) or real values, shape ``(n,)`` or
@@ -213,7 +216,7 @@ class MLP:
             order = rng.permutation(n)
             for start in range(0, n, bs):
                 idx = order[start : start + bs]
-                _, gW, gb = self._loss_and_grads(Xa[idx], Y[idx])
+                gW, gb = self._grads(Xa[idx], Y[idx])
                 step += 1
                 self._apply_update(params, [*gW, *gb], m, v, step)
             self.loss_history_.append(self._loss_from_logits(self._logits(Xa), Y))
