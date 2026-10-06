@@ -92,7 +92,7 @@ $$\delta^{(l-1)}=\big(\delta^{(l)}W^{(l)\top}\big)\odot\phi'(z^{(l-1)}),\qquad
 \frac{\partial J}{\partial b^{(l)}}=\sum_i\delta^{(l)}_i$$
 
 The tests verify every gradient against **central finite differences**. Weights use Glorot (tanh) or He (ReLU)
-initialisation; optimisers are plain SGD and Adam.
+initialisation; optimisers are plain SGD and Adam, with optional gradient clipping by global norm (`clip_norm`).
 
 ### k-means &mdash; [`kmeans.py`](src/ml_from_scratch/kmeans.py)
 

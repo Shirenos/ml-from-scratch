@@ -37,6 +37,22 @@ def _act_grad(name: Activation, z: FloatArray, a: FloatArray) -> FloatArray:
     return (z > 0.0).astype(np.float64)  # ReLU'(0) = 0 by convention
 
 
+def clip_by_global_norm(grads: Sequence[FloatArray], max_norm: float) -> list[FloatArray]:
+    r"""Rescale ``grads`` so that their joint L2 norm is at most ``max_norm``.
+
+    With :math:`g = \sqrt{\sum_i \lVert g_i \rVert^2}` taken over all arrays, every
+    array is multiplied by :math:`\min(1, \mathrm{max\_norm} / g)`. The direction of
+    the full gradient is preserved; only its length is capped. Inputs are not modified.
+    """
+    if max_norm <= 0:
+        raise ValueError(f"max_norm must be positive; got {max_norm}")
+    total = float(np.sqrt(sum(float((g * g).sum()) for g in grads)))
+    if total <= max_norm:
+        return list(grads)
+    scale = max_norm / total
+    return [g * scale for g in grads]
+
+
 class MLP:
     r"""Fully connected feed-forward network trained with mini-batch gradient methods.
 
@@ -66,7 +82,7 @@ class MLP:
         \frac{\partial J}{\partial b^{(l)}} = \sum_i \delta^{(l)}_i
 
     Weights use Glorot (tanh) or He (ReLU) normal initialisation. Updates are plain
-    SGD or Adam.
+    SGD or Adam, optionally after clipping the gradient by its global norm.
 
     Args:
         hidden_layers: Sizes of the hidden layers, e.g. ``(16, 16)``.
@@ -79,6 +95,9 @@ class MLP:
         l2: Penalty strength ``lambda >= 0`` on the weights (not on biases). This is classic
             L2 regularisation: ``lambda * W`` is added to the gradient, so with Adam it is
             rescaled by the adaptive step. It is not decoupled weight decay (AdamW).
+        clip_norm: If set, rescale each mini-batch gradient so that its global L2 norm
+            (over all weights and biases together) is at most ``clip_norm``. ``None``
+            disables clipping.
         random_state: Seed (or generator) for initialisation and shuffling.
 
     Attributes:
@@ -99,6 +118,7 @@ class MLP:
         n_epochs: int = 500,
         batch_size: int | None = None,
         l2: float = 0.0,
+        clip_norm: float | None = None,
         random_state: int | np.random.Generator | None = 0,
     ) -> None:
         if activation not in ("tanh", "relu"):
@@ -117,6 +137,8 @@ class MLP:
             raise ValueError(f"l2 must be non-negative; got {l2}")
         if batch_size is not None and batch_size < 1:
             raise ValueError("batch_size must be positive")
+        if clip_norm is not None and clip_norm <= 0:
+            raise ValueError(f"clip_norm must be positive; got {clip_norm}")
         self.hidden_layers = tuple(hidden_layers)
         self.activation = activation
         self.task = task
@@ -125,6 +147,7 @@ class MLP:
         self.n_epochs = n_epochs
         self.batch_size = batch_size
         self.l2 = l2
+        self.clip_norm = clip_norm
         self.random_state = random_state
 
     # ------------------------------------------------------------ initialisation
@@ -217,8 +240,11 @@ class MLP:
             for start in range(0, n, bs):
                 idx = order[start : start + bs]
                 gW, gb = self._grads(Xa[idx], Y[idx])
+                grads = [*gW, *gb]
+                if self.clip_norm is not None:
+                    grads = clip_by_global_norm(grads, self.clip_norm)
                 step += 1
-                self._apply_update(params, [*gW, *gb], m, v, step)
+                self._apply_update(params, grads, m, v, step)
             self.loss_history_.append(self._loss_from_logits(self._logits(Xa), Y))
         return self
 

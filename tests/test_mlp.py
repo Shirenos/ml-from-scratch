@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from ml_from_scratch import MLP, make_blobs, make_moons, train_test_split
-from ml_from_scratch.mlp import Task
+from ml_from_scratch.mlp import Task, clip_by_global_norm
 
 
 def _numeric_grad(model: MLP, X: np.ndarray, Y: np.ndarray, param: np.ndarray) -> np.ndarray:
@@ -191,6 +191,7 @@ def test_regression_score_is_r2() -> None:
         ({"n_epochs": 0}, "n_epochs must be at least 1; got 0"),
         ({"l2": -0.1}, "l2 must be non-negative; got -0.1"),
         ({"batch_size": 0}, "batch_size must be positive"),
+        ({"clip_norm": 0.0}, "clip_norm must be positive; got 0.0"),
     ],
 )
 def test_constructor_rejects_bad_arguments(kwargs: dict[str, Any], message: str) -> None:
@@ -273,3 +274,45 @@ def test_regression_rejects_bad_targets(y: np.ndarray) -> None:
     X, _ = make_moons(20, random_state=0)
     with pytest.raises(ValueError, match="regression targets must be finite"):
         MLP(task="regression", n_epochs=2).fit(X, y)
+
+
+def test_clip_by_global_norm_caps_joint_norm() -> None:
+    grads = [np.array([[3.0, 0.0]]), np.array([4.0])]  # joint norm 5
+    clipped = clip_by_global_norm(grads, 1.0)
+    total = np.sqrt(sum((g * g).sum() for g in clipped))
+    assert total == pytest.approx(1.0)
+    assert np.allclose(clipped[0], [[0.6, 0.0]])
+    assert np.allclose(clipped[1], [0.8])
+    assert np.allclose(grads[0], [[3.0, 0.0]])  # inputs untouched
+    same = clip_by_global_norm(grads, 10.0)
+    assert all(a is b for a, b in zip(same, grads, strict=True))
+    with pytest.raises(ValueError, match=r"max_norm must be positive; got 0\.0"):
+        clip_by_global_norm(grads, 0.0)
+
+
+def test_clip_norm_limits_sgd_steps() -> None:
+    # One full-batch SGD epoch is a single step of length lr * ||g||, so with clipping the
+    # parameters can move by at most lr * clip_norm from their (seeded) initial values.
+    X, y = make_moons(60, noise=0.2, random_state=0)
+    lr, clip = 10.0, 0.01
+    init = MLP((6,))
+    init._init_params(2, 1, np.random.default_rng(0))  # same draws as fit(random_state=0)
+
+    def displacement(clip_norm: float | None) -> float:
+        model = MLP(
+            (6,), optimizer="sgd", learning_rate=lr, n_epochs=1, clip_norm=clip_norm, random_state=0
+        ).fit(X, y)
+        now = [*model.weights_, *model.biases_]
+        start = [*init.weights_, *init.biases_]
+        return float(np.sqrt(sum(((a - b) ** 2).sum() for a, b in zip(now, start, strict=True))))
+
+    assert displacement(clip) == pytest.approx(lr * clip)
+    assert displacement(None) > 10 * lr * clip
+
+
+def test_huge_clip_norm_matches_no_clipping() -> None:
+    X, y = make_moons(40, noise=0.2, random_state=0)
+    a = MLP((4,), n_epochs=10, batch_size=8, clip_norm=1e9, random_state=1).fit(X, y)
+    b = MLP((4,), n_epochs=10, batch_size=8, random_state=1).fit(X, y)
+    for wa, wb in zip(a.weights_, b.weights_, strict=True):
+        assert np.allclose(wa, wb, rtol=0, atol=1e-12)
