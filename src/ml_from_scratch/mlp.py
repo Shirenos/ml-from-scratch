@@ -81,6 +81,20 @@ class MLP:
         \frac{\partial J}{\partial W^{(l)}} = a^{(l-1)\top}\delta^{(l)} + \lambda W^{(l)}, \qquad
         \frac{\partial J}{\partial b^{(l)}} = \sum_i \delta^{(l)}_i
 
+    **Objective and mini-batches.** Training minimises the full-data objective
+
+    .. math::
+        J = \frac{1}{n}\sum_{i=1}^{n}\ell_i + \frac{\lambda}{2}\sum_l \lVert W^{(l)}\rVert_F^2 .
+
+    On a mini-batch :math:`B` the data term is replaced by the batch *mean*
+    :math:`\frac{1}{|B|}\sum_{i\in B}\ell_i` (hence the :math:`1/|B|` in the output error)
+    while the penalty term keeps its full weight :math:`\lambda W`. The batch gradient is
+    therefore an unbiased estimate of :math:`\nabla J`, and over an epoch of equal-sized
+    batches the average step gradient equals the full-batch gradient exactly. The effective
+    regularisation strength does not depend on ``batch_size``. (Scaling the penalty by
+    :math:`|B|/n` would only be correct for a *summed* data loss, which this class does not
+    use.)
+
     Weights use Glorot (tanh) or He (ReLU) normal initialisation. Updates are plain
     SGD or Adam, optionally after clipping the gradient by its global norm.
 
@@ -94,7 +108,9 @@ class MLP:
         batch_size: Mini-batch size; ``None`` means full batch.
         l2: Penalty strength ``lambda >= 0`` on the weights (not on biases). This is classic
             L2 regularisation: ``lambda * W`` is added to the gradient, so with Adam it is
-            rescaled by the adaptive step. It is not decoupled weight decay (AdamW).
+            rescaled by the adaptive step. It is not decoupled weight decay (AdamW). Because
+            the data term is a per-batch mean, the same ``l2`` gives the same objective for
+            every ``batch_size`` (see "Objective and mini-batches" above).
         clip_norm: If set, rescale each mini-batch gradient so that its global L2 norm
             (over all weights and biases together) is at most ``clip_norm``. ``None``
             disables clipping.

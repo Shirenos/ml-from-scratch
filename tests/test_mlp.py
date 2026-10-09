@@ -149,6 +149,47 @@ def test_l2_shrinks_weights() -> None:
     assert weight_norm(0.1) < weight_norm(0.0)
 
 
+@pytest.mark.parametrize("task", ["binary", "multiclass", "regression"])
+@pytest.mark.parametrize("batch_size", [1, 3, 8, 12, 24])
+def test_l2_strength_is_independent_of_batch_size(task: Task, batch_size: int) -> None:
+    # The objective is mean loss + l2/2 * ||W||^2 over the full data set, whatever the
+    # batch size: averaging the step gradients over an epoch of equal-sized batches must
+    # reproduce the full-batch gradient, and the penalty part of every batch gradient must
+    # be exactly l2 * W (not rescaled by the batch size).
+    rng = np.random.default_rng(7)
+    n, l2 = 24, 0.3
+    X = rng.normal(size=(n, 3))
+    if task == "binary":
+        y = np.arange(n) % 2
+    elif task == "multiclass":
+        y = np.arange(n) % 3
+    else:
+        y = rng.normal(size=(n, 2))
+    model = MLP((5,), task=task, l2=l2, n_epochs=1, random_state=0).fit(X, y)
+    Y = model._encode_targets(np.asarray(y))
+    full_W, full_b = model._grads(X, Y)
+
+    order = rng.permutation(n)
+    batches = [order[s : s + batch_size] for s in range(0, n, batch_size)]
+    sum_W = [np.zeros_like(W) for W in model.weights_]
+    sum_b = [np.zeros_like(b) for b in model.biases_]
+    for idx in batches:
+        gW, gb = model._grads(X[idx], Y[idx])
+        model.l2 = 0.0
+        gW0, _ = model._grads(X[idx], Y[idx])
+        model.l2 = l2
+        for W, g, g0 in zip(model.weights_, gW, gW0, strict=True):
+            assert np.allclose(g - g0, l2 * W, atol=1e-12)
+        for acc, g in zip(sum_W, gW, strict=True):
+            acc += g
+        for acc, g in zip(sum_b, gb, strict=True):
+            acc += g
+    for acc, g in zip(sum_W, full_W, strict=True):
+        assert np.allclose(acc / len(batches), g, atol=1e-12)
+    for acc, g in zip(sum_b, full_b, strict=True):
+        assert np.allclose(acc / len(batches), g, atol=1e-12)
+
+
 def test_binary_predict_proba_shape_and_range() -> None:
     X, y = make_moons(40, random_state=0)
     model = MLP((4,), n_epochs=5).fit(X, y)

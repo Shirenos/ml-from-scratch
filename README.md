@@ -91,6 +91,11 @@ $$\delta^{(l-1)}=\big(\delta^{(l)}W^{(l)\top}\big)\odot\phi'(z^{(l-1)}),\qquad
 \frac{\partial J}{\partial W^{(l)}}=a^{(l-1)\top}\delta^{(l)}+\lambda W^{(l)},\qquad
 \frac{\partial J}{\partial b^{(l)}}=\sum_i\delta^{(l)}_i$$
 
+Training minimises $J=\frac1n\sum_i\ell_i+\frac{\lambda}{2}\sum_l\lVert W^{(l)}\rVert_F^2$. On a mini-batch the data
+term is the batch *mean* while the penalty keeps its full weight $\lambda W$, so every batch gradient is an unbiased
+estimate of $\nabla J$ and the strength of `l2` does not depend on `batch_size` (a test checks that the average
+gradient over an epoch of equal batches equals the full-batch gradient for several batch sizes).
+
 The tests verify every gradient against **central finite differences**. Weights use Glorot (tanh) or He (ReLU)
 initialisation; optimisers are plain SGD and Adam, with optional gradient clipping by global norm (`clip_norm`).
 
