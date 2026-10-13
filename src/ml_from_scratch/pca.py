@@ -8,6 +8,27 @@ from numpy.typing import ArrayLike
 from ._utils import FloatArray, as_2d_float
 
 
+def _flip_singular_vectors(vt: FloatArray) -> FloatArray:
+    """Flip each right singular vector so its first non-zero entry is positive.
+
+    Singular vectors are unique only up to sign. Choosing the first non-zero
+    loading as the pivot avoids ``np.sign(0) == 0``, which would otherwise
+    multiply an entire component by zero (the failure mode of using a pivot
+    that can be exactly 0). This matches the spirit of scikit-learn's
+    ``svd_flip``: pick a non-zero reference loading and force it positive.
+    """
+    oriented = np.array(vt, dtype=float, copy=True)
+    # argmax on a bool mask yields the index of the first True; all-False -> 0.
+    nonzero = oriented != 0
+    has_nonzero = nonzero.any(axis=1)
+    first_nz = nonzero.argmax(axis=1)
+    rows = np.arange(oriented.shape[0])
+    signs = np.ones(oriented.shape[0], dtype=float)
+    signs[has_nonzero] = np.sign(oriented[rows[has_nonzero], first_nz[has_nonzero]])
+    oriented *= signs[:, None]
+    return oriented
+
+
 class PCA:
     r"""Principal component analysis.
 
@@ -24,7 +45,9 @@ class PCA:
     sense, by the Eckart-Young theorem) is :math:`\hat X = Z V_k^\top + \bar x`.
 
     Signs of singular vectors are arbitrary, so each component is flipped such that its
-    largest-magnitude entry is positive, which makes the output deterministic.
+    first non-zero entry is positive, which makes the output deterministic. Using the
+    first non-zero entry (rather than ``np.sign`` of a possibly zero pivot) avoids
+    wiping out a whole component when the reference loading is exactly 0.
 
     Args:
         n_components: Number of components to keep; ``None`` keeps ``min(n, d)``.
@@ -53,9 +76,9 @@ class PCA:
             raise ValueError(f"n_components={k} must be <= min(n_samples, n_features)={min(n, d)}")
         self.mean_: FloatArray = Xa.mean(axis=0)
         _, s, vt = np.linalg.svd(Xa - self.mean_, full_matrices=False)
-        # deterministic sign: the largest |entry| of every axis is positive
-        pivot = np.abs(vt).argmax(axis=1)
-        vt = vt * np.sign(vt[np.arange(vt.shape[0]), pivot])[:, None]
+        # Deterministic sign (sklearn svd_flip style): first non-zero entry positive.
+        # np.sign(0) == 0 would zero out a whole row if the pivot loading were 0.
+        vt = _flip_singular_vectors(vt)
         variance = s**2 / (n - 1)
         self.components_: FloatArray = vt[:k]
         self.singular_values_: FloatArray = s[:k]

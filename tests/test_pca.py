@@ -52,8 +52,44 @@ def test_reconstruction(X: np.ndarray) -> None:
 
 def test_deterministic_sign(X: np.ndarray) -> None:
     pca = PCA(2).fit(X)
-    pivot = np.abs(pca.components_).argmax(axis=1)
-    assert np.all(pca.components_[np.arange(2), pivot] > 0)
+    for row in pca.components_:
+        nz = np.flatnonzero(row)
+        assert nz.size > 0
+        assert row[nz[0]] > 0
+
+
+def test_sign_flip_zero_pivot_does_not_zero_component() -> None:
+    """A zero pivot must not wipe the component via ``np.sign(0)``.
+
+    Using the first non-zero loading as the sign reference keeps the vector
+    intact when the leading entry is exactly 0 (the classic failure mode of
+    ``row *= np.sign(row[0])``).
+    """
+    from ml_from_scratch.pca import _flip_singular_vectors
+
+    # Old buggy convention: multiply by sign of entry 0 -> zeros the rows.
+    vt = np.array([[0.0, -0.6, -0.8], [0.0, 0.0, -1.0], [0.0, 0.0, 0.0]])
+    buggy = vt * np.sign(vt[:, 0])[:, None]
+    assert np.allclose(buggy, 0.0)
+
+    flipped = _flip_singular_vectors(vt)
+    assert flipped[0, 0] == 0.0
+    assert flipped[0, 1] > 0  # first non-zero became positive
+    assert np.allclose(flipped[0], -vt[0])
+    assert flipped[1, 2] > 0
+    assert np.allclose(flipped[1], -vt[1])
+    assert np.allclose(flipped[2], 0.0)  # all-zero row stays zero
+
+    # Constant feature -> many components have a leading structural 0.
+    rng = np.random.default_rng(0)
+    X = np.column_stack([np.full(80, 3.0), rng.normal(size=(80, 2))])
+    pca = PCA(2).fit(X)
+    assert np.allclose(pca.components_[:, 0], 0.0, atol=1e-10)
+    assert np.all(np.linalg.norm(pca.components_, axis=1) > 0.9)
+    for row in pca.components_:
+        nz = np.flatnonzero(np.abs(row) > 1e-12)
+        assert nz.size > 0
+        assert row[nz[0]] > 0
 
 
 def test_matches_sklearn(X: np.ndarray) -> None:
