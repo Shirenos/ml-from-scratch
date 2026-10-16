@@ -6,6 +6,7 @@ from .linear_regression import LinearRegression
 from .logistic_regression import LogisticRegression
 from .mlp import MLP
 from .pca import PCA
+from .softmax_regression import SoftmaxRegression
 
 __version__ = "0.1.0"
 
@@ -15,6 +16,7 @@ __all__ = [
     "KMeans",
     "LinearRegression",
     "LogisticRegression",
+    "SoftmaxRegression",
     "__version__",
     "make_blobs",
     "make_moons",

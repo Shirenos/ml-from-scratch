@@ -40,4 +40,4 @@ jobs:
           for script in examples/[a-z]*.py; do
             python "$script" --out "$RUNNER_TEMP/plots"
           done
-          test "$(ls "$RUNNER_TEMP/plots"/*.png | wc -l)" -ge 6
+          test "$(ls "$RUNNER_TEMP/plots"/*.png | wc -l)" -ge 7

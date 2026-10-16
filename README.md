@@ -15,6 +15,7 @@ development-only dependency) against scikit-learn.
 | --- | --- | --- |
 | Linear (and ridge) regression | `LinearRegression` | normal equations **or** gradient descent |
 | Binary logistic regression | `LogisticRegression` | gradient descent on cross-entropy |
+| Multinomial (softmax) regression | `SoftmaxRegression` | gradient descent on cross-entropy |
 | Multilayer perceptron | `MLP` | hand-written backpropagation, SGD / Adam |
 | k-means | `KMeans` | Lloyd's algorithm + k-means++ seeding |
 | PCA | `PCA` | SVD of the centred data matrix |
@@ -35,6 +36,7 @@ python examples/mlp_decision_boundary.py   # regenerate a plot into docs/
 ```python
 import numpy as np
 from ml_from_scratch import MLP, PCA, KMeans, LinearRegression, LogisticRegression
+from ml_from_scratch import SoftmaxRegression
 from ml_from_scratch import make_moons, make_blobs, train_test_split
 
 # linear regression: closed form or gradient descent
@@ -42,6 +44,10 @@ X = np.random.default_rng(0).normal(size=(100, 3))
 y = X @ [1.0, -2.0, 0.5] + 3.0
 LinearRegression().fit(X, y).coef_  # ~ [1, -2, 0.5]
 LinearRegression("gradient_descent", learning_rate=0.1, n_iter=500).fit(X, y)
+
+# multinomial logistic regression on three blobs
+X, y = make_blobs(300, 3, random_state=1)
+SoftmaxRegression(l2=1e-3).fit(X, y).predict_proba(X[:2])  # rows sum to 1
 
 # a small neural network on two moons
 X, y = make_moons(500, noise=0.2, random_state=0)
@@ -80,6 +86,18 @@ $$J(w,b)=\frac1n\sum_i\big[\log(1+e^{z_i})-y_iz_i\big]+\frac\lambda2\lVert w\rVe
 
 has the gradient $\nabla_w J=\frac1n X^\top(\sigma(z)-y)+\lambda w$. $J$ is convex, so gradient
 descent finds the global optimum. `softplus` / `sigmoid` are implemented in a numerically stable way.
+
+### Softmax regression &mdash; [`softmax_regression.py`](src/ml_from_scratch/softmax_regression.py)
+
+For $K$ classes, $P(y=k\mid x)=e^{z_k}/\sum_j e^{z_j}$ with logits $z=W^\top x+b$. With one-hot targets $Y$ the objective
+
+$$J(W,b)=\frac1n\sum_i\Big[\log\sum_j e^{z_{ij}}-\sum_k Y_{ik}z_{ik}\Big]+\frac\lambda2\lVert W\rVert_F^2$$
+
+has the gradient $\nabla_W J=\frac1n X^\top(P-Y)+\lambda W$, $\nabla_b J=\frac1n\sum_i(P_i-Y_i)$ with $P=\mathrm{softmax}(XW+b)$;
+the intercepts are not penalised. The log-sum-exp subtracts the row maximum, so huge logits never overflow, and
+`predict_log_proba` returns $z_k-\log\sum_j e^{z_j}$ directly. Because every row of $P-Y$ sums to zero, gradient descent
+from zero keeps the class weights centred ($\sum_k w_k=0$), which is the same symmetric solution scikit-learn finds.
+For $K=2$ this is binary logistic regression with $w=w_1-w_0$ and half the ridge strength (both are tested).
 
 ### Multilayer perceptron &mdash; [`mlp.py`](src/ml_from_scratch/mlp.py)
 
@@ -123,12 +141,13 @@ matplotlib style (`ml_from_scratch.plotting.apply_universe_style`).
 | **Loss curves** (`loss_curves.py`)<br>![loss curves](docs/loss_curves.png) | **MLP decision boundary on two moons** (`mlp_decision_boundary.py`)<br>![MLP decision boundary](docs/mlp_decision_boundary.png) |
 | **k-means clusters + elbow curve** (`kmeans_clusters.py`)<br>![k-means](docs/kmeans_clusters.png) | **PCA projection** (`pca_projection.py`)<br>![PCA](docs/pca_projection.png) |
 | **Linear regression: closed form vs GD** (`linear_regression_fit.py`)<br>![linear regression](docs/linear_regression.png) | **Logistic regression boundary** (`logistic_regression_boundary.py`)<br>![logistic regression](docs/logistic_regression.png) |
+| **Softmax regression: three-class regions** (`softmax_regression_regions.py`)<br>![softmax regression](docs/softmax_regression.png) | |
 
 ## Testing and quality
 
 * `pytest` &mdash; analytical results (normal equations, eigendecomposition of the covariance, Eckart&ndash;Young
   residual), numerical gradient checks for backprop, and comparisons with scikit-learn
-  (`Ridge`, `LogisticRegression`, `KMeans`, `PCA`). The scikit-learn tests are skipped automatically if it is
+  (`Ridge`, binary and multinomial `LogisticRegression`, `KMeans`, `PCA`). The scikit-learn tests are skipped automatically if it is
   not installed; it is a *development* dependency only.
 * `ruff check` / `ruff format --check` and `mypy --strict` are clean.
 * GitHub Actions runs lint, type checks, tests and all example scripts on Python 3.11, 3.12 and 3.13.
@@ -140,6 +159,7 @@ ml-from-scratch/
 ├── src/ml_from_scratch/
 │   ├── linear_regression.py      # closed form + gradient descent (+ ridge)
 │   ├── logistic_regression.py    # binary logistic regression
+│   ├── softmax_regression.py     # multinomial logistic regression
 │   ├── mlp.py                    # MLP with backprop, SGD/Adam
 │   ├── kmeans.py                 # Lloyd + k-means++
 │   ├── pca.py                    # PCA via SVD
