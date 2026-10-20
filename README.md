@@ -44,6 +44,7 @@ X = np.random.default_rng(0).normal(size=(100, 3))
 y = X @ [1.0, -2.0, 0.5] + 3.0
 LinearRegression().fit(X, y).coef_  # ~ [1, -2, 0.5]
 LinearRegression("gradient_descent", learning_rate=0.1, n_iter=500).fit(X, y)
+LinearRegression("gradient_descent", standardize=True).fit(1000 * X, y)  # any units
 
 # multinomial logistic regression on three blobs
 X, y = make_blobs(300, 3, random_state=1)
@@ -77,6 +78,13 @@ Model $\hat y = Xw + b$ with objective $J(w,b)=\frac{1}{2n}\lVert Xw+b-y\rVert^2
 * **Gradient descent**: with residual $r=Xw+b-y$,
   $\nabla_w J=\frac1n X^\top r+\lambda w$, $\nabla_b J=\frac1n\sum_i r_i$, and $w\leftarrow w-\eta\nabla_w J$.
   $J$ is a convex quadratic, so GD converges to the closed-form solution.
+* **Feature scaling**: a fixed step converges only for $\eta<2/L$, where $L$ is the largest eigenvalue of
+  $\frac1n X^\top X+\lambda I$, so features measured in thousands make the default step blow up.
+  `standardize=True` fits on $(X-\mu)/\sigma$ and maps the weights back ($w=w_s/\sigma$, $b=b_s-\mu^\top w$),
+  so `coef_` stays in the original units. With $\lambda>0$ the penalty then acts on the standardised weights.
+  Every gradient-descent model (also logistic and softmax regression) emits a `DivergenceWarning` as soon as
+  the loss goes up, which a small enough step never does on a smooth convex objective, and raises
+  `FloatingPointError` if the loss stops being finite.
 
 ### Logistic regression &mdash; [`logistic_regression.py`](src/ml_from_scratch/logistic_regression.py)
 

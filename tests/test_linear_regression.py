@@ -1,7 +1,10 @@
+import warnings
+
 import numpy as np
 import pytest
 
-from ml_from_scratch import LinearRegression
+from ml_from_scratch import DivergenceWarning, LinearRegression
+from ml_from_scratch._utils import feature_scaling
 
 
 @pytest.fixture
@@ -99,3 +102,68 @@ def test_divergence_is_reported() -> None:
     X = np.arange(20, dtype=float)[:, None] * 100
     with pytest.raises(FloatingPointError):
         LinearRegression("gradient_descent", learning_rate=1.0, n_iter=2000).fit(X, X[:, 0])
+
+
+def _unscaled(seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    """Features in very different units (ones, hundreds, thousands) with large offsets."""
+    rng = np.random.default_rng(seed)
+    X = rng.normal(size=(200, 3)) * [1.0, 100.0, 1000.0] + [0.0, 500.0, -3000.0]
+    y = X @ np.array([1.0, 0.02, -0.003]) + 0.5 + rng.normal(0, 0.1, 200)
+    return X, y
+
+
+@pytest.mark.filterwarnings("ignore:overflow:RuntimeWarning")
+def test_unscaled_features_warn_before_diverging() -> None:
+    X, y = _unscaled()
+    with (
+        pytest.warns(DivergenceWarning, match="standardize=True"),
+        pytest.raises(FloatingPointError, match="standardize=True"),
+    ):
+        LinearRegression("gradient_descent", n_iter=5000).fit(X, y)
+
+
+def test_standardize_makes_gradient_descent_converge_on_unscaled_features() -> None:
+    X, y = _unscaled()
+    exact = LinearRegression().fit(X, y)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DivergenceWarning)
+        gd = LinearRegression("gradient_descent", n_iter=5000, standardize=True).fit(X, y)
+    assert np.all(np.diff(gd.loss_history_) <= 0)
+    assert gd.coef_ == pytest.approx(exact.coef_, rel=1e-5)
+    assert gd.intercept_ == pytest.approx(exact.intercept_, abs=1e-4)
+
+
+def test_standardize_without_l2_keeps_the_least_squares_solution() -> None:
+    X, y = _unscaled(1)
+    plain = LinearRegression().fit(X, y)
+    std = LinearRegression(standardize=True).fit(X, y)
+    assert std.coef_ == pytest.approx(plain.coef_, rel=1e-9)
+    assert std.intercept_ == pytest.approx(plain.intercept_, rel=1e-9)
+
+
+def test_standardize_with_l2_agrees_between_methods() -> None:
+    X, y = _unscaled(2)
+    cf = LinearRegression(l2=0.1, standardize=True).fit(X, y)
+    gd = LinearRegression("gradient_descent", l2=0.1, n_iter=5000, standardize=True).fit(X, y)
+    assert gd.coef_ == pytest.approx(cf.coef_, rel=1e-6)
+    assert gd.intercept_ == pytest.approx(cf.intercept_, abs=1e-4)
+    # the penalty acts on standardised weights, so it differs from plain ridge
+    assert not np.allclose(cf.coef_, LinearRegression(l2=0.1).fit(X, y).coef_)
+
+
+def test_feature_scaling_handles_constant_columns_and_no_intercept() -> None:
+    X = np.array([[1.0, 5.0], [3.0, 5.0], [5.0, 5.0]])
+    offset, scale = feature_scaling(X, center=True)
+    assert offset == pytest.approx([3.0, 5.0])
+    assert scale == pytest.approx([np.sqrt(8 / 3), 1.0])
+    offset, scale = feature_scaling(X, center=False)
+    assert offset == pytest.approx([0.0, 0.0])
+    assert scale == pytest.approx([np.sqrt(35 / 3), 5.0])
+
+    y = 2.0 * X[:, 0]
+    model = LinearRegression(
+        "gradient_descent", fit_intercept=False, standardize=True, n_iter=5000, tol=0.0
+    ).fit(X, y)
+    assert model.intercept_ == 0.0
+    exact = LinearRegression(fit_intercept=False).fit(X, y)
+    assert model.coef_ == pytest.approx(exact.coef_, abs=1e-6)

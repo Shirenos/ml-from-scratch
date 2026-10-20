@@ -7,7 +7,15 @@ from typing import Self
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ._utils import FloatArray, as_2d_float, check_consistent_length, logsumexp, softmax
+from ._utils import (
+    FloatArray,
+    as_2d_float,
+    check_consistent_length,
+    check_descent,
+    feature_scaling,
+    logsumexp,
+    softmax,
+)
 
 
 class SoftmaxRegression:
@@ -46,6 +54,10 @@ class SoftmaxRegression:
         l2: Ridge strength ``lambda >= 0`` (the intercepts are not penalised).
         fit_intercept: Learn the biases ``b``.
         tol: Stop when the loss improves by less than ``tol``.
+        standardize: Fit on features scaled to unit variance (and zero mean if
+            ``fit_intercept``) so the fixed step size works whatever the feature units;
+            ``coef_`` and ``intercept_`` are mapped back to the original units. With
+            ``l2 > 0`` the penalty then acts on the standardised weights.
 
     Attributes:
         classes_: Sorted class labels; column ``k`` of the probabilities is ``classes_[k]``.
@@ -62,6 +74,7 @@ class SoftmaxRegression:
         l2: float = 0.0,
         fit_intercept: bool = True,
         tol: float = 1e-12,
+        standardize: bool = False,
     ) -> None:
         if l2 < 0:
             raise ValueError("l2 must be non-negative")
@@ -72,6 +85,7 @@ class SoftmaxRegression:
         self.l2 = l2
         self.fit_intercept = fit_intercept
         self.tol = tol
+        self.standardize = standardize
 
     def fit(self, X: ArrayLike, y: ArrayLike) -> Self:
         """Fit on ``X`` of shape ``(n, d)`` and a label vector ``y`` with at least two classes."""
@@ -85,15 +99,20 @@ class SoftmaxRegression:
             raise ValueError("need at least 2 classes")
         Y = (ya[:, None] == self.classes_[None, :]).astype(np.float64)
 
+        if self.standardize:
+            offset, scale = feature_scaling(Xa, center=self.fit_intercept)
+            Xa = (Xa - offset) / scale
         n, d = Xa.shape
         W = np.zeros((d, len(self.classes_)))
         b = np.zeros(len(self.classes_))
         self.loss_history_: list[float] = []
         prev = np.inf
+        warned = False
         for _ in range(self.n_iter):
             Z = Xa @ W + b
             loss = self._objective(Z, Y, W)
             self.loss_history_.append(loss)
+            warned = check_descent(loss, prev, warned=warned)
             if abs(prev - loss) < self.tol:
                 break
             prev = loss
@@ -101,6 +120,10 @@ class SoftmaxRegression:
             W = W - self.learning_rate * (Xa.T @ residual / n + self.l2 * W)
             if self.fit_intercept:
                 b = b - self.learning_rate * residual.mean(axis=0)
+        if self.standardize:
+            # X_s W + b = X (W / scale) + (b - offset @ (W / scale))
+            W = W / scale[:, None]
+            b = b - offset @ W
         self.coef_: FloatArray = W.T.copy()
         self.intercept_: FloatArray = b
         return self

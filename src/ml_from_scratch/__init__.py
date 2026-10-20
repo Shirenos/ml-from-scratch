@@ -1,5 +1,6 @@
 """ml-from-scratch: classic machine-learning algorithms in plain NumPy."""
 
+from ._utils import DivergenceWarning
 from .datasets import make_blobs, make_moons, train_test_split
 from .kmeans import KMeans
 from .linear_regression import LinearRegression
@@ -13,6 +14,7 @@ __version__ = "0.1.0"
 __all__ = [
     "MLP",
     "PCA",
+    "DivergenceWarning",
     "KMeans",
     "LinearRegression",
     "LogisticRegression",

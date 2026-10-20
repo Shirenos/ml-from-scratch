@@ -1,7 +1,9 @@
+import warnings
+
 import numpy as np
 import pytest
 
-from ml_from_scratch import LogisticRegression, make_blobs
+from ml_from_scratch import DivergenceWarning, LogisticRegression, make_blobs
 from ml_from_scratch._utils import sigmoid
 
 
@@ -77,3 +79,29 @@ def test_string_labels_and_validation() -> None:
         LogisticRegression().fit(X, np.arange(len(X)) % 3)
     with pytest.raises(RuntimeError):
         LogisticRegression().predict(X)
+
+
+def test_unscaled_features_trigger_a_divergence_warning() -> None:
+    X, y = _data()
+    with pytest.warns(DivergenceWarning, match="learning_rate is too large"):
+        LogisticRegression().fit(X * 1000.0 + 5000.0, y)
+
+
+def test_standardize_is_invariant_to_affine_feature_rescaling() -> None:
+    X, y = _data()
+    X_big = X * [1000.0, 0.01] + [5000.0, -3.0]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DivergenceWarning)
+        small = LogisticRegression(l2=1e-3, standardize=True).fit(X, y)
+        big = LogisticRegression(l2=1e-3, standardize=True).fit(X_big, y)
+    assert np.all(np.diff(big.loss_history_) <= 0)
+    assert big.predict_proba(X_big) == pytest.approx(small.predict_proba(X), abs=1e-9)
+    assert big.coef_ == pytest.approx(small.coef_ / [1000.0, 0.01], rel=1e-9)
+
+
+def test_standardize_without_l2_reaches_the_same_optimum() -> None:
+    X, y = _data()
+    plain = LogisticRegression(n_iter=20000, tol=0.0).fit(X, y)
+    std = LogisticRegression(n_iter=20000, tol=0.0, standardize=True).fit(X, y)
+    assert std.coef_ == pytest.approx(plain.coef_, rel=1e-6)
+    assert std.intercept_ == pytest.approx(plain.intercept_, rel=1e-6)

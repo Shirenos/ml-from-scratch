@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import numpy as np
@@ -9,6 +10,10 @@ from numpy.typing import ArrayLike, NDArray
 
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.intp]
+
+
+class DivergenceWarning(RuntimeWarning):
+    """Gradient descent increased the loss, so the step size is too large for the data."""
 
 
 def as_2d_float(X: ArrayLike, name: str = "X") -> FloatArray:
@@ -44,6 +49,42 @@ def check_random_state(seed: int | np.random.Generator | None) -> np.random.Gene
     if isinstance(seed, np.random.Generator):
         return seed
     return np.random.default_rng(seed)
+
+
+def feature_scaling(X: FloatArray, *, center: bool) -> tuple[FloatArray, FloatArray]:
+    """Return per-feature ``(offset, scale)`` so that ``(X - offset) / scale`` is standardised.
+
+    ``offset`` is the column mean if ``center`` else zero, and ``scale`` is the root mean
+    square of ``X - offset`` (the standard deviation when centred). Constant columns get
+    ``scale = 1`` so they are left unchanged instead of producing a division by zero.
+    """
+    offset = X.mean(axis=0) if center else np.zeros(X.shape[1])
+    scale = np.sqrt(np.mean((X - offset) ** 2, axis=0))
+    return offset, np.where(scale > 0.0, scale, 1.0)
+
+
+def check_descent(loss: float, prev: float, *, warned: bool, stacklevel: int = 3) -> bool:
+    """Guard a fixed-step gradient descent loop against divergence.
+
+    Raises :class:`FloatingPointError` if ``loss`` is not finite. For a smooth convex
+    objective a small enough step decreases the loss at every iteration, so an increase
+    means the learning rate is too large for the scale of the features: emit one
+    :class:`DivergenceWarning` per fit (``warned`` says whether it was already emitted).
+    Returns the updated ``warned`` flag.
+    """
+    if not np.isfinite(loss):
+        raise FloatingPointError(
+            "loss diverged; use standardize=True, a smaller learning_rate, or scale the features"
+        )
+    if not warned and loss > prev + 1e-10 * max(1.0, abs(prev)):
+        warnings.warn(
+            f"loss increased from {prev:.6g} to {loss:.6g}: learning_rate is too large for the "
+            "feature scale; use standardize=True or a smaller learning_rate",
+            DivergenceWarning,
+            stacklevel=stacklevel,
+        )
+        return True
+    return warned
 
 
 def sigmoid(z: FloatArray) -> FloatArray:

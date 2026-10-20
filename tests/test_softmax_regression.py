@@ -1,7 +1,9 @@
+import warnings
+
 import numpy as np
 import pytest
 
-from ml_from_scratch import LogisticRegression, SoftmaxRegression, make_blobs
+from ml_from_scratch import DivergenceWarning, LogisticRegression, SoftmaxRegression, make_blobs
 from ml_from_scratch._utils import logsumexp, softmax
 
 CENTERS = [[-2.0, -1.0], [2.0, -1.0], [0.0, 2.0]]
@@ -141,3 +143,24 @@ def test_string_labels_and_validation() -> None:
         SoftmaxRegression().predict(X)
     with pytest.raises(ValueError):
         model.predict(X[:, :1])
+
+
+def test_unscaled_features_trigger_a_divergence_warning() -> None:
+    X, y = _data()
+    with pytest.warns(DivergenceWarning, match="standardize=True"):
+        SoftmaxRegression().fit(X * 1000.0 + 5000.0, y)
+
+
+def test_standardize_is_invariant_to_affine_feature_rescaling() -> None:
+    X, y = _data()
+    X_big = X * [1000.0, 0.01] + [5000.0, -3.0]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DivergenceWarning)
+        small = SoftmaxRegression(l2=1e-3, standardize=True).fit(X, y)
+        big = SoftmaxRegression(l2=1e-3, standardize=True).fit(X_big, y)
+    assert np.all(np.diff(big.loss_history_) <= 0)
+    assert big.predict_proba(X_big) == pytest.approx(small.predict_proba(X), abs=1e-9)
+    assert big.coef_ == pytest.approx(small.coef_ / [1000.0, 0.01], rel=1e-9)
+    # rescaling keeps the class weights centred
+    assert big.coef_.sum(axis=0) == pytest.approx(0.0, abs=1e-9)
+    assert big.intercept_.sum() == pytest.approx(0.0, abs=1e-9)

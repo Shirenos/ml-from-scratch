@@ -19,6 +19,8 @@ from ._utils import (
     as_1d_float,
     as_2d_float,
     check_consistent_length,
+    check_descent,
+    feature_scaling,
     r2_score,
 )
 
@@ -45,7 +47,17 @@ class LinearRegression:
         w \leftarrow w - \eta\, \nabla_w J
 
     The objective is a convex quadratic, so a small enough learning rate :math:`\eta`
-    converges to the closed-form solution. Standardising features helps a lot.
+    converges to the closed-form solution. A step is safe when
+    :math:`\eta < 2 / L` with :math:`L` the largest eigenvalue of
+    :math:`\tfrac1n X^\top X + \lambda I`, so features on a large scale (say, in the
+    thousands) make the default step diverge. ``standardize=True`` fits on
+    :math:`(X - \mu) / \sigma` and maps the coefficients back to the original units;
+    an increase of the loss emits a ``DivergenceWarning`` and a non-finite loss raises
+    ``FloatingPointError``.
+
+    With ``standardize=True`` and ``l2 > 0`` the penalty acts on the standardised
+    weights (as in ``StandardScaler`` followed by ``Ridge``); for ``l2 == 0`` the
+    solution is the same as without standardisation.
 
     Equivalence with scikit-learn's ``Ridge``: ``alpha = n_samples * l2``.
 
@@ -56,6 +68,8 @@ class LinearRegression:
         learning_rate: Step size ``eta`` (gradient descent only).
         n_iter: Maximum number of iterations (gradient descent only).
         tol: Stop when the loss improves by less than ``tol`` (gradient descent only).
+        standardize: Fit on features scaled to unit variance (and zero mean if
+            ``fit_intercept``); ``coef_`` and ``intercept_`` are still in original units.
 
     Attributes:
         coef_: Weight vector ``w`` of shape ``(n_features,)``.
@@ -63,6 +77,9 @@ class LinearRegression:
         loss_history_: Objective ``J`` after every iteration (empty for ``closed_form``).
         n_iter_: Iterations actually performed (gradient descent only, else 0).
     """
+
+    coef_: FloatArray
+    intercept_: float
 
     def __init__(
         self,
@@ -73,6 +90,7 @@ class LinearRegression:
         learning_rate: float = 0.1,
         n_iter: int = 1000,
         tol: float = 1e-12,
+        standardize: bool = False,
     ) -> None:
         if method not in ("closed_form", "gradient_descent"):
             raise ValueError(f"unknown method {method!r}")
@@ -86,6 +104,7 @@ class LinearRegression:
         self.learning_rate = learning_rate
         self.n_iter = n_iter
         self.tol = tol
+        self.standardize = standardize
 
     # ------------------------------------------------------------------ fitting
     def fit(self, X: ArrayLike, y: ArrayLike) -> LinearRegression:
@@ -95,10 +114,17 @@ class LinearRegression:
         check_consistent_length(Xa, ya)
         self.loss_history_: list[float] = []
         self.n_iter_ = 0
+        if self.standardize:
+            offset, scale = feature_scaling(Xa, center=self.fit_intercept)
+            Xa = (Xa - offset) / scale
         if self.method == "closed_form":
             self._fit_closed_form(Xa, ya)
         else:
             self._fit_gradient_descent(Xa, ya)
+        if self.standardize:
+            # X_s w_s + b_s = X (w_s / scale) + (b_s - offset . (w_s / scale))
+            self.coef_ = self.coef_ / scale
+            self.intercept_ = float(self.intercept_ - offset @ self.coef_)
         return self
 
     def _fit_closed_form(self, X: FloatArray, y: FloatArray) -> None:
@@ -113,20 +139,20 @@ class LinearRegression:
             w = np.linalg.solve(gram, Xc.T @ yc)
         else:
             w = np.linalg.lstsq(Xc, yc, rcond=None)[0]
-        self.coef_: FloatArray = w
-        self.intercept_: float = float(y_mean - x_mean @ w) if self.fit_intercept else 0.0
+        self.coef_ = w
+        self.intercept_ = float(y_mean - x_mean @ w) if self.fit_intercept else 0.0
 
     def _fit_gradient_descent(self, X: FloatArray, y: FloatArray) -> None:
         n, d = X.shape
         w = np.zeros(d)
         b = 0.0
         prev = np.inf
+        warned = False
         for it in range(1, self.n_iter + 1):
             r = X @ w + b - y
             loss = float(r @ r) / (2 * n) + 0.5 * self.l2 * float(w @ w)
             self.loss_history_.append(loss)
-            if not np.isfinite(loss):
-                raise FloatingPointError("loss diverged; lower learning_rate or scale features")
+            warned = check_descent(loss, prev, warned=warned, stacklevel=5)
             if abs(prev - loss) < self.tol:
                 break
             prev = loss

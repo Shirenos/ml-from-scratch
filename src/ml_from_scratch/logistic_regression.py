@@ -9,6 +9,8 @@ from ._utils import (
     FloatArray,
     as_2d_float,
     check_consistent_length,
+    check_descent,
+    feature_scaling,
     sigmoid,
     softplus,
 )
@@ -43,6 +45,10 @@ class LogisticRegression:
         l2: Ridge strength ``lambda >= 0`` (the intercept is not penalised).
         fit_intercept: Learn the bias ``b``.
         tol: Stop when the loss improves by less than ``tol``.
+        standardize: Fit on features scaled to unit variance (and zero mean if
+            ``fit_intercept``) so the fixed step size works whatever the feature units;
+            ``coef_`` and ``intercept_`` are mapped back to the original units. With
+            ``l2 > 0`` the penalty then acts on the standardised weights.
 
     Attributes:
         classes_: The two class labels; ``classes_[1]`` is the "positive" class.
@@ -59,6 +65,7 @@ class LogisticRegression:
         l2: float = 0.0,
         fit_intercept: bool = True,
         tol: float = 1e-12,
+        standardize: bool = False,
     ) -> None:
         if l2 < 0:
             raise ValueError("l2 must be non-negative")
@@ -69,6 +76,7 @@ class LogisticRegression:
         self.l2 = l2
         self.fit_intercept = fit_intercept
         self.tol = tol
+        self.standardize = standardize
 
     def fit(self, X: ArrayLike, y: ArrayLike) -> LogisticRegression:
         """Fit on ``X`` of shape ``(n, d)`` and a vector ``y`` with exactly two distinct labels."""
@@ -82,15 +90,20 @@ class LogisticRegression:
             raise ValueError(f"expected exactly 2 classes, got {len(self.classes_)}")
         t = (ya == self.classes_[1]).astype(np.float64)
 
+        if self.standardize:
+            offset, scale = feature_scaling(Xa, center=self.fit_intercept)
+            Xa = (Xa - offset) / scale
         n, d = Xa.shape
         w = np.zeros(d)
         b = 0.0
         self.loss_history_: list[float] = []
         prev = np.inf
+        warned = False
         for _ in range(self.n_iter):
             z = Xa @ w + b
             loss = float(np.mean(softplus(z) - t * z)) + 0.5 * self.l2 * float(w @ w)
             self.loss_history_.append(loss)
+            warned = check_descent(loss, prev, warned=warned)
             if abs(prev - loss) < self.tol:
                 break
             prev = loss
@@ -98,6 +111,10 @@ class LogisticRegression:
             w = w - self.learning_rate * (Xa.T @ residual / n + self.l2 * w)
             if self.fit_intercept:
                 b -= self.learning_rate * float(residual.mean())
+        if self.standardize:
+            # X_s w + b = X (w / scale) + (b - offset . (w / scale))
+            w = w / scale
+            b -= float(offset @ w)
         self.coef_: FloatArray = w
         self.intercept_: float = b
         return self
