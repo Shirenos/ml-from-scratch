@@ -2,6 +2,7 @@
 
 from ._utils import DivergenceWarning
 from .datasets import make_blobs, make_moons, train_test_split
+from .gaussian_mixture import GaussianMixture
 from .kmeans import KMeans
 from .linear_regression import LinearRegression
 from .logistic_regression import LogisticRegression
@@ -15,6 +16,7 @@ __all__ = [
     "MLP",
     "PCA",
     "DivergenceWarning",
+    "GaussianMixture",
     "KMeans",
     "LinearRegression",
     "LogisticRegression",

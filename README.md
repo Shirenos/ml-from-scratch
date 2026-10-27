@@ -18,6 +18,7 @@ development-only dependency) against scikit-learn.
 | Multinomial (softmax) regression | `SoftmaxRegression` | gradient descent on cross-entropy |
 | Multilayer perceptron | `MLP` | hand-written backpropagation, SGD / Adam |
 | k-means | `KMeans` | Lloyd's algorithm + k-means++ seeding |
+| Gaussian mixture | `GaussianMixture` | expectation-maximisation, full covariances |
 | PCA | `PCA` | SVD of the centred data matrix |
 
 Matplotlib is only used for the plots in `examples/` (optional `plots` extra).
@@ -132,6 +133,17 @@ Minimise the inertia $J=\sum_i\lVert x_i-\mu_{c_i}\rVert^2$ by alternating
 step can increase $J$, so the algorithm converges to a local minimum. **k-means++** seeding picks each new centre
 with probability $\propto D(x)^2$ (squared distance to the nearest chosen centre), and the best of `n_init` runs is kept.
 
+### Gaussian mixture &mdash; [`gaussian_mixture.py`](src/ml_from_scratch/gaussian_mixture.py)
+
+The density $p(x)=\sum_k\pi_k\,\mathcal N(x\mid\mu_k,\Sigma_k)$ is fitted by EM. The **E step** computes the
+responsibilities $r_{ik}=\pi_k\mathcal N(x_i\mid\mu_k,\Sigma_k)/p(x_i)$ in log space (log-sum-exp), the **M step** sets
+$\pi_k=N_k/n$, $\mu_k=\frac1{N_k}\sum_i r_{ik}x_i$ and $\Sigma_k=\frac1{N_k}\sum_i r_{ik}(x_i-\mu_k)(x_i-\mu_k)^\top$
+with $N_k=\sum_i r_{ik}$. Jensen's inequality bounds the log-likelihood from below, the E step makes the bound tight
+and the M step maximises it, so the log-likelihood never decreases (a test checks this on every iteration).
+Densities use the Cholesky factor of each $\Sigma_k$, `reg_covar` keeps the covariances positive definite, and the
+model also offers `predict_proba`, `score_samples`, `sample`, `bic` and `aic`. With one component EM returns the
+Gaussian MLE in one step (sample mean, covariance divided by $n$), which is tested against its closed-form likelihood.
+
 ### PCA &mdash; [`pca.py`](src/ml_from_scratch/pca.py)
 
 With centred data $X_c$, the principal axes are the eigenvectors of the covariance
@@ -155,7 +167,7 @@ matplotlib style (`ml_from_scratch.plotting.apply_universe_style`).
 
 * `pytest` &mdash; analytical results (normal equations, eigendecomposition of the covariance, Eckart&ndash;Young
   residual), numerical gradient checks for backprop, and comparisons with scikit-learn
-  (`Ridge`, binary and multinomial `LogisticRegression`, `KMeans`, `PCA`). The scikit-learn tests are skipped automatically if it is
+  (`Ridge`, binary and multinomial `LogisticRegression`, `KMeans`, `GaussianMixture`, `PCA`). The scikit-learn tests are skipped automatically if it is
   not installed; it is a *development* dependency only.
 * `ruff check` / `ruff format --check` and `mypy --strict` are clean.
 * GitHub Actions runs lint, type checks, tests and all example scripts on Python 3.11, 3.12 and 3.13.
@@ -170,6 +182,7 @@ ml-from-scratch/
 │   ├── softmax_regression.py     # multinomial logistic regression
 │   ├── mlp.py                    # MLP with backprop, SGD/Adam
 │   ├── kmeans.py                 # Lloyd + k-means++
+│   ├── gaussian_mixture.py       # Gaussian mixture via EM
 │   ├── pca.py                    # PCA via SVD
 │   ├── datasets.py               # make_moons, make_blobs, train_test_split
 │   ├── plotting.py               # "Universe" matplotlib style helpers
