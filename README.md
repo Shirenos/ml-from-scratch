@@ -161,7 +161,7 @@ matplotlib style (`ml_from_scratch.plotting.apply_universe_style`).
 | **Loss curves** (`loss_curves.py`)<br>![loss curves](docs/loss_curves.png) | **MLP decision boundary on two moons** (`mlp_decision_boundary.py`)<br>![MLP decision boundary](docs/mlp_decision_boundary.png) |
 | **k-means clusters + elbow curve** (`kmeans_clusters.py`)<br>![k-means](docs/kmeans_clusters.png) | **PCA projection** (`pca_projection.py`)<br>![PCA](docs/pca_projection.png) |
 | **Linear regression: closed form vs GD** (`linear_regression_fit.py`)<br>![linear regression](docs/linear_regression.png) | **Logistic regression boundary** (`logistic_regression_boundary.py`)<br>![logistic regression](docs/logistic_regression.png) |
-| **Softmax regression: three-class regions** (`softmax_regression_regions.py`)<br>![softmax regression](docs/softmax_regression.png) | |
+| **Softmax regression: three-class regions** (`softmax_regression_regions.py`)<br>![softmax regression](docs/softmax_regression.png) | **Gaussian mixture: covariance ellipses + BIC / AIC** (`gaussian_mixture_ellipses.py`)<br>![Gaussian mixture](docs/gaussian_mixture.png) |
 
 ## Testing and quality
 
