@@ -18,7 +18,7 @@ development-only dependency) against scikit-learn.
 | Multinomial (softmax) regression | `SoftmaxRegression` | gradient descent on cross-entropy |
 | Multilayer perceptron | `MLP` | hand-written backpropagation, SGD / Adam |
 | k-means | `KMeans` | Lloyd's algorithm + k-means++ seeding |
-| Gaussian mixture | `GaussianMixture` | expectation-maximisation, full covariances |
+| Gaussian mixture | `GaussianMixture` | expectation-maximisation, full / diagonal / spherical covariances |
 | PCA | `PCA` | SVD of the centred data matrix |
 
 Matplotlib is only used for the plots in `examples/` (optional `plots` extra).
@@ -143,6 +143,10 @@ and the M step maximises it, so the log-likelihood never decreases (a test check
 Densities use the Cholesky factor of each $\Sigma_k$, `reg_covar` keeps the covariances positive definite, and the
 model also offers `predict_proba`, `score_samples`, `sample`, `bic` and `aic`. With one component EM returns the
 Gaussian MLE in one step (sample mean, covariance divided by $n$), which is tested against its closed-form likelihood.
+`covariance_type="diag"` or `"spherical"` restricts every $\Sigma_k$ to $\operatorname{diag}(\sigma_{k1}^2,\dots,\sigma_{kd}^2)$
+or $\sigma_k^2 I$; the exact M step then keeps the diagonal of the weighted scatter matrix or its mean over features,
+so the log-likelihood is still monotone, and `bic` / `aic` count $Kd$ or $K$ covariance parameters instead of
+$Kd(d+1)/2$.
 
 ### PCA &mdash; [`pca.py`](src/ml_from_scratch/pca.py)
 

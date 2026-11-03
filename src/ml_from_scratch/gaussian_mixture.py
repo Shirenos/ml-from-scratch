@@ -1,4 +1,4 @@
-"""Gaussian mixture model with full covariances, fitted by expectation-maximisation."""
+"""Gaussian mixture model (full, diagonal or spherical covariances) fitted by EM."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from ._utils import FloatArray, IntArray, as_2d_float, check_random_state, logsu
 from .kmeans import KMeans
 
 Init = Literal["kmeans", "random"]
+CovarianceType = Literal["full", "diag", "spherical"]
 
 _LOG_2PI = float(np.log(2.0 * np.pi))
 
@@ -69,6 +70,14 @@ class GaussianMixture:
     :math:`\ell \ge \frac1n\sum_{i,k} r_{ik}\log(\pi_k\mathcal N_{ik}/r_{ik})`. The E step
     makes the bound tight and the M step maximises it, so :math:`\ell` never decreases.
 
+    ``covariance_type`` restricts the shape of every :math:`\Sigma_k`: ``"full"`` (any
+    covariance), ``"diag"``
+    (:math:`\Sigma_k=\operatorname{diag}(\sigma_{k1}^2,\dots,\sigma_{kd}^2)`) or
+    ``"spherical"`` (:math:`\Sigma_k=\sigma_k^2 I`). Maximising the bound over the restricted
+    family keeps the diagonal of the weighted scatter matrix (``"diag"``) or its mean over the
+    ``d`` features (``"spherical"``), so the M step stays exact and the monotonicity argument
+    carries over unchanged.
+
     ``reg_covar`` is added to the diagonal of every :math:`\Sigma_k` to keep it positive
     definite (a component collapsing onto one point would otherwise send :math:`\ell` to
     infinity). With ``reg_covar = 0`` the M step is exact and the monotonicity holds to
@@ -78,6 +87,7 @@ class GaussianMixture:
         n_components: Number of mixture components ``K``.
         init: ``"kmeans"`` (hard k-means labels as initial responsibilities) or
             ``"random"`` (random responsibilities).
+        covariance_type: ``"full"``, ``"diag"`` or ``"spherical"``.
         n_init: Number of independent restarts.
         max_iter: Maximum EM iterations per restart.
         tol: Stop when the mean log-likelihood improves by at most ``tol``.
@@ -87,8 +97,10 @@ class GaussianMixture:
     Attributes:
         weights_: Mixing weights :math:`\pi_k`, shape ``(K,)``.
         means_: Component means, shape ``(K, d)``.
-        covariances_: Component covariances, shape ``(K, d, d)``.
-        precisions_cholesky_: :math:`L_k^{-1}` with :math:`\Sigma_k = L_kL_k^\top`.
+        covariances_: Component covariances in scikit-learn's layout: shape ``(K, d, d)`` for
+            ``"full"``, ``(K, d)`` variances for ``"diag"`` and ``(K,)`` for ``"spherical"``.
+        precisions_cholesky_: :math:`L_k^{-1}` with :math:`\Sigma_k = L_kL_k^\top`, always as
+            full ``(K, d, d)`` matrices (diagonal for ``"diag"`` and ``"spherical"``).
         log_likelihood_history_: Mean log-likelihood after every M step of the best run
             (the first entry follows the initial M step on the starting responsibilities).
         lower_bound_: Final mean log-likelihood of the best run.
@@ -101,6 +113,7 @@ class GaussianMixture:
         n_components: int = 1,
         *,
         init: Init = "kmeans",
+        covariance_type: CovarianceType = "full",
         n_init: int = 1,
         max_iter: int = 100,
         tol: float = 1e-6,
@@ -111,10 +124,13 @@ class GaussianMixture:
             raise ValueError("n_components, n_init and max_iter must be >= 1")
         if init not in ("kmeans", "random"):
             raise ValueError(f"unknown init {init!r}")
+        if covariance_type not in ("full", "diag", "spherical"):
+            raise ValueError(f"unknown covariance_type {covariance_type!r}")
         if reg_covar < 0.0:
             raise ValueError("reg_covar must be >= 0")
         self.n_components = n_components
         self.init = init
+        self.covariance_type = covariance_type
         self.n_init = n_init
         self.max_iter = max_iter
         self.tol = tol
@@ -129,9 +145,22 @@ class GaussianMixture:
         covs = np.empty((self.n_components, d, d))
         for k in range(self.n_components):
             diff = X - means[k]
-            covs[k] = (resp[:, k, None] * diff).T @ diff / nk[k]
+            if self.covariance_type == "full":
+                covs[k] = (resp[:, k, None] * diff).T @ diff / nk[k]
+            else:
+                var = (resp[:, k, None] * diff * diff).sum(axis=0) / nk[k]
+                if self.covariance_type == "spherical":
+                    var = np.full(d, var.mean())
+                covs[k] = np.diag(var)
             covs[k].flat[:: d + 1] += self.reg_covar
         return nk / n, means, covs
+
+    def _public_covariances(self, covs: FloatArray) -> FloatArray:
+        """Convert full ``(K, d, d)`` matrices to the layout of ``covariance_type``."""
+        if self.covariance_type == "full":
+            return covs
+        diag = np.diagonal(covs, axis1=1, axis2=2).copy()
+        return diag if self.covariance_type == "diag" else diag[:, 0].copy()
 
     @staticmethod
     def _weighted_log_prob(
@@ -184,7 +213,8 @@ class GaussianMixture:
         assert best is not None
         self.weights_ = best.weights
         self.means_ = best.means
-        self.covariances_ = best.covs
+        self._full_covariances = best.covs
+        self.covariances_ = self._public_covariances(best.covs)
         self.precisions_cholesky_ = best.prec
         self.log_likelihood_history_ = best.history
         self.lower_bound_ = best.history[-1]
@@ -227,9 +257,14 @@ class GaussianMixture:
         return self.fit(X).predict(X)
 
     def n_parameters(self) -> int:
-        """Number of free parameters: ``K-1`` weights, ``K d`` means, ``K d(d+1)/2`` covariances."""
+        """Free parameters: ``K-1`` weights, ``K d`` means and the covariance entries.
+
+        The covariances add ``K d(d+1)/2`` (``"full"``), ``K d`` (``"diag"``) or ``K``
+        (``"spherical"``) parameters.
+        """
         k, d = self.means_.shape
-        return (k - 1) + k * d + k * d * (d + 1) // 2
+        cov = {"full": k * d * (d + 1) // 2, "diag": k * d, "spherical": k}[self.covariance_type]
+        return (k - 1) + k * d + cov
 
     def bic(self, X: ArrayLike) -> float:
         """Bayesian information criterion ``-2 log L + p log n`` (lower is better)."""
@@ -249,7 +284,7 @@ class GaussianMixture:
             raise RuntimeError("call fit() before sample()")
         rng = check_random_state(random_state)
         labels = rng.choice(self.n_components, size=n_samples, p=self.weights_).astype(np.intp)
-        chol = np.linalg.cholesky(self.covariances_)
+        chol = np.linalg.cholesky(self._full_covariances)
         z = rng.standard_normal((n_samples, self.means_.shape[1]))
         X = self.means_[labels] + np.einsum("nij,nj->ni", chol[labels], z)
         return X, labels

@@ -142,3 +142,86 @@ def test_validation() -> None:
     model = GaussianMixture(2, random_state=0).fit(_overlapping())
     with pytest.raises(ValueError):
         model.predict(np.zeros((2, 3)))
+
+
+CONSTRAINED = ["diag", "spherical"]
+
+
+@pytest.mark.parametrize("cov_type", CONSTRAINED)
+@pytest.mark.parametrize("seed", [0, 1])
+def test_constrained_log_likelihood_never_decreases(cov_type: str, seed: int) -> None:
+    X = _overlapping(seed)
+    model = GaussianMixture(
+        3,
+        covariance_type=cov_type,
+        reg_covar=0.0,
+        tol=0.0,
+        max_iter=60,
+        random_state=seed,  # type: ignore[arg-type]
+    )
+    hist = np.array(model.fit(X).log_likelihood_history_)
+    assert np.all(np.diff(hist) >= -1e-10)
+    assert model.lower_bound_ == pytest.approx(model.score(X))
+
+
+def test_constrained_single_component_is_the_restricted_mle() -> None:
+    X = _overlapping()
+    d = X.shape[1]
+    var = X.var(axis=0)  # biased per-feature variances
+    diag = GaussianMixture(1, covariance_type="diag", reg_covar=0.0).fit(X)
+    assert diag.covariances_.shape == (1, d)
+    assert np.allclose(diag.covariances_[0], var)
+    expected = -0.5 * (d * np.log(2.0 * np.pi) + np.log(var).sum() + d)
+    assert diag.score(X) == pytest.approx(expected)
+    sph = GaussianMixture(1, covariance_type="spherical", reg_covar=0.0).fit(X)
+    assert sph.covariances_.shape == (1,)
+    assert sph.covariances_[0] == pytest.approx(var.mean())
+    expected = -0.5 * d * (np.log(2.0 * np.pi) + np.log(var.mean()) + 1.0)
+    assert sph.score(X) == pytest.approx(expected)
+    full = GaussianMixture(1, reg_covar=0.0).fit(X)
+    assert full.score(X) >= diag.score(X) >= sph.score(X)
+
+
+@pytest.mark.parametrize("cov_type", CONSTRAINED)
+def test_constrained_density_and_sampling(cov_type: str) -> None:
+    X = _overlapping()
+    model = GaussianMixture(3, covariance_type=cov_type, random_state=0).fit(X)  # type: ignore[arg-type]
+    full = model._full_covariances
+    off_diag = full - np.einsum("kii->ki", full)[:, :, None] * np.eye(2)
+    assert np.allclose(off_diag, 0.0)
+    dens = np.zeros(len(X))
+    for w, mu, cov in zip(model.weights_, model.means_, full, strict=True):
+        diff = X - mu
+        maha = np.einsum("ni,ij,nj->n", diff, np.linalg.inv(cov), diff)
+        dens += w * np.exp(-0.5 * maha) / np.sqrt((2.0 * np.pi) ** 2 * np.linalg.det(cov))
+    assert np.allclose(model.score_samples(X), np.log(dens))
+    one = GaussianMixture(1, covariance_type=cov_type).fit(X)  # type: ignore[arg-type]
+    S, _ = one.sample(20000, random_state=0)
+    assert np.allclose(np.var(S, axis=0), np.diag(one._full_covariances[0]), atol=0.08)
+
+
+@pytest.mark.parametrize(("cov_type", "n_cov"), [("full", 9), ("diag", 6), ("spherical", 3)])
+def test_parameter_count_per_covariance_type(cov_type: str, n_cov: int) -> None:
+    X = _overlapping()
+    model = GaussianMixture(3, covariance_type=cov_type, random_state=0).fit(X)  # type: ignore[arg-type]
+    assert model.n_parameters() == 2 + 3 * 2 + n_cov
+
+
+@pytest.mark.parametrize("cov_type", CONSTRAINED)
+def test_constrained_matches_sklearn(cov_type: str) -> None:
+    sk = pytest.importorskip("sklearn.mixture")
+    X = _overlapping()
+    kw = {"covariance_type": cov_type, "n_init": 5, "tol": 1e-10, "max_iter": 2000}
+    ours = GaussianMixture(3, random_state=0, **kw).fit(X)  # type: ignore[arg-type]
+    ref = sk.GaussianMixture(3, random_state=0, **kw).fit(X)
+    assert ours.score(X) == pytest.approx(ref.score(X), abs=1e-6)
+    assert ours.bic(X) == pytest.approx(ref.bic(X), rel=1e-6)
+    order = np.argsort(ours.means_[:, 0])
+    ref_order = np.argsort(ref.means_[:, 0])
+    assert np.allclose(ours.means_[order], ref.means_[ref_order], atol=1e-4)
+    assert np.allclose(ours.covariances_[order], ref.covariances_[ref_order], atol=1e-4)
+
+
+def test_unknown_covariance_type() -> None:
+    with pytest.raises(ValueError):
+        GaussianMixture(2, covariance_type="tied")  # type: ignore[arg-type]
