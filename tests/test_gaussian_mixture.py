@@ -200,7 +200,10 @@ def test_constrained_density_and_sampling(cov_type: str) -> None:
     assert np.allclose(np.var(S, axis=0), np.diag(one._full_covariances[0]), atol=0.08)
 
 
-@pytest.mark.parametrize(("cov_type", "n_cov"), [("full", 9), ("diag", 6), ("spherical", 3)])
+@pytest.mark.parametrize(
+    ("cov_type", "n_cov"),
+    [("full", 9), ("tied", 3), ("diag", 6), ("spherical", 3)],
+)
 def test_parameter_count_per_covariance_type(cov_type: str, n_cov: int) -> None:
     X = _overlapping()
     model = GaussianMixture(3, covariance_type=cov_type, random_state=0).fit(X)  # type: ignore[arg-type]
@@ -222,6 +225,58 @@ def test_constrained_matches_sklearn(cov_type: str) -> None:
     assert np.allclose(ours.covariances_[order], ref.covariances_[ref_order], atol=1e-4)
 
 
+@pytest.mark.parametrize("seed", [0, 1])
+def test_tied_log_likelihood_never_decreases(seed: int) -> None:
+    X = _overlapping(seed)
+    model = GaussianMixture(
+        3, covariance_type="tied", reg_covar=0.0, tol=0.0, max_iter=60, random_state=seed
+    )
+    hist = np.array(model.fit(X).log_likelihood_history_)
+    assert np.all(np.diff(hist) >= -1e-10)
+    assert model.lower_bound_ == pytest.approx(model.score(X))
+
+
+def test_tied_equals_full_when_k_is_one() -> None:
+    X = _overlapping()
+    full = GaussianMixture(1, covariance_type="full", reg_covar=0.0).fit(X)
+    tied = GaussianMixture(1, covariance_type="tied", reg_covar=0.0).fit(X)
+    assert tied.covariances_.shape == (2, 2)
+    assert np.allclose(full.means_, tied.means_)
+    assert np.allclose(full.covariances_[0], tied.covariances_)
+    assert full.score(X) == pytest.approx(tied.score(X))
+    assert full.n_parameters() == tied.n_parameters()
+
+
+def test_tied_density_and_sampling() -> None:
+    X = _overlapping()
+    model = GaussianMixture(3, covariance_type="tied", random_state=0).fit(X)
+    assert model.covariances_.shape == (2, 2)
+    assert np.allclose(model._full_covariances, model.covariances_)
+    dens = np.zeros(len(X))
+    for w, mu, cov in zip(model.weights_, model.means_, model._full_covariances, strict=True):
+        diff = X - mu
+        maha = np.einsum("ni,ij,nj->n", diff, np.linalg.inv(cov), diff)
+        dens += w * np.exp(-0.5 * maha) / np.sqrt((2.0 * np.pi) ** 2 * np.linalg.det(cov))
+    assert np.allclose(model.score_samples(X), np.log(dens))
+    one = GaussianMixture(1, covariance_type="tied").fit(X)
+    S, _ = one.sample(20000, random_state=0)
+    assert np.allclose(np.cov(S.T, bias=True), one.covariances_, atol=0.08)
+
+
+def test_tied_matches_sklearn() -> None:
+    sk = pytest.importorskip("sklearn.mixture")
+    X = _overlapping()
+    kw = {"covariance_type": "tied", "n_init": 5, "tol": 1e-10, "max_iter": 2000}
+    ours = GaussianMixture(3, random_state=0, **kw).fit(X)  # type: ignore[arg-type]
+    ref = sk.GaussianMixture(3, random_state=0, **kw).fit(X)
+    assert ours.score(X) == pytest.approx(ref.score(X), abs=1e-6)
+    assert ours.bic(X) == pytest.approx(ref.bic(X), rel=1e-6)
+    order = np.argsort(ours.means_[:, 0])
+    ref_order = np.argsort(ref.means_[:, 0])
+    assert np.allclose(ours.means_[order], ref.means_[ref_order], atol=1e-4)
+    assert np.allclose(ours.covariances_, ref.covariances_, atol=1e-4)
+
+
 def test_unknown_covariance_type() -> None:
     with pytest.raises(ValueError):
-        GaussianMixture(2, covariance_type="tied")  # type: ignore[arg-type]
+        GaussianMixture(2, covariance_type="nope")  # type: ignore[arg-type]
