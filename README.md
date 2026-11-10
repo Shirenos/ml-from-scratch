@@ -16,6 +16,7 @@ development-only dependency) against scikit-learn.
 | Linear (and ridge) regression | `LinearRegression` | normal equations **or** gradient descent |
 | Binary logistic regression | `LogisticRegression` | gradient descent on cross-entropy |
 | Multinomial (softmax) regression | `SoftmaxRegression` | gradient descent on cross-entropy |
+| Gaussian naive Bayes | `GaussianNB` | closed-form maximum likelihood |
 | Multilayer perceptron | `MLP` | hand-written backpropagation, SGD / Adam |
 | k-means | `KMeans` | Lloyd's algorithm + k-means++ seeding |
 | Gaussian mixture | `GaussianMixture` | expectation-maximisation, full / tied / diagonal / spherical covariances |
@@ -126,6 +127,16 @@ gradient over an epoch of equal batches equals the full-batch gradient for sever
 The tests verify every gradient against **central finite differences**. Weights use Glorot (tanh) or He (ReLU)
 initialisation; optimisers are plain SGD and Adam, with optional gradient clipping by global norm (`clip_norm`).
 
+### Gaussian naive Bayes &mdash; [`naive_bayes.py`](src/ml_from_scratch/naive_bayes.py)
+
+Assume the features are independent normals given the class, $p(x\mid y=k)=\prod_j\mathcal N(x_j\mid\theta_{kj},\sigma_{kj}^2)$.
+Fitting is closed form: priors $\pi_k=n_k/n$, per-class means $\theta_{kj}$ and per-class variances divided by $n_k$.
+Prediction applies Bayes' rule in log space, $\log\pi_k-\frac12\sum_j[\log(2\pi\sigma_{kj}^2)+(x_j-\theta_{kj})^2/\sigma_{kj}^2]$
+followed by log-sum-exp normalisation, so even far-away points get finite log-probabilities. As in scikit-learn,
+$\epsilon=$ `var_smoothing` $\cdot\max_j\operatorname{Var}(X_j)$ is added to every variance so a constant feature or a
+one-sample class cannot divide by zero. Each class density is exactly a one-component diagonal `GaussianMixture`
+(a test checks this), which makes naive Bayes a quadratic classifier with axis-aligned covariances.
+
 ### k-means &mdash; [`kmeans.py`](src/ml_from_scratch/kmeans.py)
 
 Minimise the inertia $J=\sum_i\lVert x_i-\mu_{c_i}\rVert^2$ by alternating
@@ -172,7 +183,7 @@ matplotlib style (`ml_from_scratch.plotting.apply_universe_style`).
 
 * `pytest` &mdash; analytical results (normal equations, eigendecomposition of the covariance, Eckart&ndash;Young
   residual), numerical gradient checks for backprop, and comparisons with scikit-learn
-  (`Ridge`, binary and multinomial `LogisticRegression`, `KMeans`, `GaussianMixture`, `PCA`). The scikit-learn tests are skipped automatically if it is
+  (`Ridge`, binary and multinomial `LogisticRegression`, `KMeans`, `GaussianMixture`, `GaussianNB`, `PCA`). The scikit-learn tests are skipped automatically if it is
   not installed; it is a *development* dependency only.
 * `ruff check` / `ruff format --check` and `mypy --strict` are clean.
 * GitHub Actions runs lint, type checks, tests and all example scripts on Python 3.11, 3.12 and 3.13.
@@ -185,6 +196,7 @@ ml-from-scratch/
 │   ├── linear_regression.py      # closed form + gradient descent (+ ridge)
 │   ├── logistic_regression.py    # binary logistic regression
 │   ├── softmax_regression.py     # multinomial logistic regression
+│   ├── naive_bayes.py            # Gaussian naive Bayes
 │   ├── mlp.py                    # MLP with backprop, SGD/Adam
 │   ├── kmeans.py                 # Lloyd + k-means++
 │   ├── gaussian_mixture.py       # Gaussian mixture via EM

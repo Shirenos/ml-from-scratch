@@ -7,6 +7,7 @@ from .kmeans import KMeans
 from .linear_regression import LinearRegression
 from .logistic_regression import LogisticRegression
 from .mlp import MLP
+from .naive_bayes import GaussianNB
 from .pca import PCA
 from .softmax_regression import SoftmaxRegression
 
@@ -17,6 +18,7 @@ __all__ = [
     "PCA",
     "DivergenceWarning",
     "GaussianMixture",
+    "GaussianNB",
     "KMeans",
     "LinearRegression",
     "LogisticRegression",
