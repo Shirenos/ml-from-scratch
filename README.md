@@ -178,7 +178,7 @@ matplotlib style (`ml_from_scratch.plotting.apply_universe_style`).
 | **k-means clusters + elbow curve** (`kmeans_clusters.py`)<br>![k-means](docs/kmeans_clusters.png) | **PCA projection** (`pca_projection.py`)<br>![PCA](docs/pca_projection.png) |
 | **Linear regression: closed form vs GD** (`linear_regression_fit.py`)<br>![linear regression](docs/linear_regression.png) | **Logistic regression boundary** (`logistic_regression_boundary.py`)<br>![logistic regression](docs/logistic_regression.png) |
 | **Softmax regression: three-class regions** (`softmax_regression_regions.py`)<br>![softmax regression](docs/softmax_regression.png) | **Gaussian mixture: covariance ellipses + BIC / AIC** (`gaussian_mixture_ellipses.py`)<br>![Gaussian mixture](docs/gaussian_mixture.png) |
-| **Gaussian naive Bayes: quadratic regions + axis-aligned Gaussians** (`naive_bayes_regions.py`)<br>![Gaussian naive Bayes](docs/naive_bayes.png) | |
+| **Gaussian naive Bayes: quadratic regions + axis-aligned Gaussians** (`naive_bayes_regions.py`)<br>![Gaussian naive Bayes](docs/naive_bayes.png) | **GMM covariance types: full / tied / diag / spherical** (`gmm_covariance_types.py`)<br>![GMM covariance types](docs/gmm_covariance_types.png) |
 
 ## Testing and quality
 

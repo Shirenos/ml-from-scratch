@@ -44,16 +44,22 @@ def draw_ellipses(ax: Axes, mean: np.ndarray, cov: np.ndarray, color: str) -> No
         )
 
 
-def main() -> None:
-    out = output_dir(__doc__ or "")
-    apply_universe_style()
+def sheared_blobs() -> np.ndarray:
+    """Three Gaussian blobs, two of them elongated and tilted by a linear map."""
     centers = np.array([[0.0, 0.0], [5.0, 4.0], [-3.0, 5.0]])
     X, y = make_blobs(600, centers.tolist(), cluster_std=1.0, random_state=7)
     # A linear map keeps each blob Gaussian but makes it elongated and tilted.
+    # The shear is applied per label because make_blobs shuffles the samples.
     shears = [[[2.2, 0.0], [1.4, 0.5]], [[0.5, -0.9], [0.0, 1.6]], [[1.0, 0.0], [0.0, 1.0]]]
     for j, A in enumerate(np.array(shears)):
         X[y == j] = (X[y == j] - centers[j]) @ A.T + centers[j]
+    return X
 
+
+def main() -> None:
+    out = output_dir(__doc__ or "")
+    apply_universe_style()
+    X = sheared_blobs()
     gmm = GaussianMixture(3, n_init=3, random_state=0).fit(X)
     labels = gmm.predict(X)
     print(f"K=3 mean log-likelihood {gmm.lower_bound_:.4f} after {gmm.n_iter_} iterations")
